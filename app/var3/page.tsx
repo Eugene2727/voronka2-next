@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, FormEvent, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import Tracker from '../components/Tracker' // Импортируем ваш трекер!
+import Tracker from '../components/Tracker'
 
 // Вспомогательная функция для чтения кук перед отправкой (если localStorage пуст)
 function getCookie(name: string) {
@@ -22,7 +22,6 @@ export default function HomePage() {
 	const router = useRouter()
 	const emailRef = useRef<HTMLInputElement>(null)
 
-	// Новое состояние для отслеживания полной загрузки страницы
 	const [isPageLoaded, setIsPageLoaded] = useState(false)
 	
 	const [email, setEmail] = useState('')
@@ -32,24 +31,38 @@ export default function HomePage() {
 	const [showBanner, setShowBanner] = useState(false)
 
 	// ==========================================
-	// ЛОГИКА ПОЛНОЙ ЗАГРУЗКИ СТРАНИЦЫ
+	// УМНЫЙ ПРЕЛОАДЕР: ЖДЕМ ЗАГРУЗКИ КАРТИНОК
 	// ==========================================
 	useEffect(() => {
-		const handleLoad = () => setIsPageLoaded(true);
+		// Список важных картинок, которые должны появиться сразу без "моргания"
+		const criticalImages = [
+			'/img/kolokol.svg', 
+			'/img/setting.svg'
+		];
+		
+		let loadedImagesCount = 0;
 
-		// Если страница уже успела загрузиться (например, при возврате назад)
-		if (document.readyState === 'complete') {
-			handleLoad();
-		} else {
-			// Иначе ждем события полной загрузки окна (всех картинок, скриптов и т.д.)
-			window.addEventListener('load', handleLoad);
-			return () => window.removeEventListener('load', handleLoad);
-		}
+		const checkAllImagesLoaded = () => {
+			loadedImagesCount++;
+			// Как только все картинки скачаны в кэш — прячем спиннер
+			if (loadedImagesCount === criticalImages.length) {
+				// Небольшая задержка 150мс для визуальной плавности
+				setTimeout(() => setIsPageLoaded(true), 150);
+			}
+		};
+
+		// Запускаем предзагрузку каждой картинки "за кулисами"
+		criticalImages.forEach((src) => {
+			const img = new window.Image();
+			img.src = src;
+			img.onload = checkAllImagesLoaded;
+			img.onerror = checkAllImagesLoaded; // Если картинка с ошибкой - не зависаем навсегда
+		});
 	}, [])
 
 	// Появление плашки (Danger Alert) через 1 секунду ПОСЛЕ полной загрузки
 	useEffect(() => {
-		if (!isPageLoaded) return; // Ждем, пока страница загрузится
+		if (!isPageLoaded) return; 
 
 		const timer = setTimeout(() => setShowBanner(true), 1000)
 		return () => clearTimeout(timer)
@@ -117,7 +130,6 @@ export default function HomePage() {
 		setIsSubmitting(true)
 		const emailValue = email.trim()
 
-		// Очистка старых данных, если юзер сменил почту
 		const currentSavedEmail = sessionStorage.getItem('userEmail')
 		if (currentSavedEmail && currentSavedEmail !== emailValue) {
 			sessionStorage.removeItem('isLoggedIn')
@@ -125,7 +137,6 @@ export default function HomePage() {
 			sessionStorage.removeItem('refreshToken')
 		}
 
-		// Достаем clickid, который сохранил ваш компонент Tracker
 		const clickId =
 			localStorage.getItem('clickid') || getCookie('clickid') || ''
 		const PLAN_CODE = 'trial_month'
@@ -148,13 +159,11 @@ export default function HomePage() {
 			const data = await response.json()
 
 			if (response.ok) {
-				// Успех: сохраняем данные
 				if (data.truegate_external_user_id) {
 					localStorage.setItem('tg_user_id', data.truegate_external_user_id)
 				}
 				sessionStorage.setItem('userEmail', emailValue)
 
-				// Предзагрузка платежного виджета
 				try {
 					const wRes = await fetch(
 						'https://wa-adminn.com/api/v1/subscription-payment-widget/',
@@ -178,7 +187,6 @@ export default function HomePage() {
 					console.error('Preload error', e)
 				}
 
-				// Переход на сканирование с сохранением параметров URL
 				router.push('/scan' + window.location.search)
 			} else {
 				alert(
@@ -194,12 +202,10 @@ export default function HomePage() {
 
 	return (
 		<>
-			{/* Оборачиваем трекер в Suspense для поддержки SSR */}
 			<Suspense fallback={null}>
 				<Tracker />
 			</Suspense>
 
-			{/* Стили */}
 			<style
 				dangerouslySetInnerHTML={{
 					__html: `
@@ -245,15 +251,12 @@ export default function HomePage() {
 				}}
 			/>
 
-			{/* Если страница еще не прогрузилась полностью — показываем спиннер */}
 			{!isPageLoaded ? (
 				<div className="preloader-overlay">
 					<div className="spinner"></div>
 				</div>
 			) : (
-				/* Основной контент появляется только после загрузки */
 				<div className='mobile-container'>
-					{/* Всплывающее уведомление */}
 					<div className={`notification-banner ${showBanner ? 'show' : ''}`}>
 						<div className='notif-icon'>
 							<img src='/img/setting.svg' alt='setting' />
@@ -268,6 +271,7 @@ export default function HomePage() {
 					</div>
 
 					<div className='main-content'>
+						{/* Теперь колокольчик появится моментально вместе с текстом */}
 						<img src='/img/kolokol.svg' alt='kolokol' />
 
 						<h1 className='headline'>
