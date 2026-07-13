@@ -40,7 +40,7 @@ export default function SpecialPage() {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
-							subscription_type_code: 'trial',
+							subscription_type_code: 'trial_month',
 							email: savedEmail,
 						}),
 					},
