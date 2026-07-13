@@ -17,6 +17,9 @@ export default function SpecialPage() {
 	const [errorMessage, setErrorMessage] = useState('')
 	const submitRef = useRef<any>(null)
 
+	// НОВЫЙ РЕФ ДЛЯ ХРАНЕНИЯ SDK (чтобы убивать его при ошибке)
+	const sdkInstanceRef = useRef<any>(null)
+
 	useEffect(() => {
 		const email = sessionStorage.getItem('userEmail')
 		if (!email) {
@@ -26,12 +29,16 @@ export default function SpecialPage() {
 		setIsAllowed(true)
 	}, [router])
 
-	const initTruegate = async () => {
+	// ==========================================
+	// ИНИЦИАЛИЗАЦИЯ И УПРАВЛЕНИЕ SDK
+	// ==========================================
+	const initTruegate = async (forceRetry = false) => {
 		const savedEmail = sessionStorage.getItem('userEmail')
 		if (!savedEmail) return
 
 		try {
-			let txId = sessionStorage.getItem('preloadedTxId')
+			// Если forceRetry = true, игнорируем старый TxId и запрашиваем новый
+			let txId = forceRetry ? null : sessionStorage.getItem('preloadedTxId')
 
 			if (!txId) {
 				const res = await fetch(
@@ -49,17 +56,39 @@ export default function SpecialPage() {
 				if (!res.ok || !data.payment_widget?.transactionId)
 					throw new Error('Failed TxId')
 				txId = data.payment_widget.transactionId
+				
+				// Обновляем в сессии на всякий случай
+				sessionStorage.setItem('preloadedTxId', txId)
 			}
 
-			// Ожидаем загрузки объекта window.truegateSdk (из <Script>)
+			// Ожидаем загрузки объекта window.truegateSdk
 			await new Promise<void>(resolve => {
 				if ((window as any).truegateSdk) resolve()
-				else
-					window.addEventListener('message', e => {
-						if (e.data && e.data.type === 'SDK_READY') resolve()
-					})
+				else {
+					const handler = (e: any) => {
+						if (e.data && e.data.type === 'SDK_READY') {
+							window.removeEventListener('message', handler)
+							resolve()
+						}
+					}
+					window.addEventListener('message', handler)
+				}
 			})
 
+			// 1. УБИВАЕМ СТАРЫЙ SDK ПЕРЕД СОЗДАНИЕМ НОВОГО (если он был)
+			if (sdkInstanceRef.current) {
+				if (typeof sdkInstanceRef.current.destroy === 'function') {
+					try {
+						sdkInstanceRef.current.destroy()
+					} catch (e) {
+						console.warn('Destroy error:', e)
+					}
+				}
+				sdkInstanceRef.current = null
+				submitRef.current = null
+			}
+
+			// 2. СОЗДАЕМ НОВЫЙ SDK
 			const sdkInstance = new (window as any).truegateSdk({
 				id: 'payment-instance',
 				transactionId: txId,
@@ -76,8 +105,17 @@ export default function SpecialPage() {
 						1500,
 					)
 				} else if (payload.details.status === 'FAILED') {
-					setErrorMessage('Payment declined by your bank. Try another card.')
-					setIsPayDisabled(false)
+					// 3. ПРИ ОШИБКЕ БЛОКИРУЕМ КНОПКУ И ПЕРЕСОЗДАЕМ ФОРМУ ЧЕРЕЗ 1.5 СЕК
+					setErrorMessage('Payment declined. Generating a new secure form...')
+					setIsPayDisabled(true)
+					
+					setTimeout(() => {
+						setErrorMessage('') // Очищаем ошибку
+						setStatusMsg('Regenerating secure connection...')
+						setSubMsg('Please wait a moment')
+						setIsOverlayHidden(false) // Снова показываем оверлей загрузки
+						initTruegate(true) // Вызываем рестарт (forceRetry = true)
+					}, 1500)
 				}
 			})
 
@@ -87,6 +125,17 @@ export default function SpecialPage() {
 			})
 
 			await sdkInstance.init()
+
+			// 4. СОХРАНЯЕМ ИНСТАНС ДЛЯ БУДУЩЕГО УДАЛЕНИЯ
+			sdkInstanceRef.current = sdkInstance
+
+			// Очищаем DOM (на случай если старые iframe зависли)
+			const numEl = document.getElementById('card-number')
+			const expEl = document.getElementById('card-expiration')
+			const cvvEl = document.getElementById('card-cvv')
+			if (numEl) numEl.innerHTML = ''
+			if (expEl) expEl.innerHTML = ''
+			if (cvvEl) cvvEl.innerHTML = ''
 
 			const result = await sdkInstance.initCardPayment({
 				cardNumberId: 'card-number',
@@ -104,6 +153,8 @@ export default function SpecialPage() {
 			})
 
 			submitRef.current = result.submit
+			
+			// Форма загружена успешно — прячем оверлей и разблокируем кнопку
 			setIsOverlayHidden(true)
 			setIsPayDisabled(false)
 		} catch (error) {
@@ -129,11 +180,11 @@ export default function SpecialPage() {
 
 	return (
 		<>
-			{/* Подключаем SDK Truegate */}
+			{/* Подключаем SDK Truegate. Обратите внимание на () => initTruegate(false) */}
 			<Script
 				src='https://sdk.truegate.tech/sdk.js'
 				strategy='afterInteractive'
-				onLoad={initTruegate}
+				onLoad={() => initTruegate(false)}
 			/>
 
 			<style
